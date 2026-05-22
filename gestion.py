@@ -4,6 +4,13 @@ import pandas as pd
 from datetime import datetime
 import os
 
+# --- CONTROL DE DEFENSA: Importación segura de la librería de PDFs ---
+try:
+    from fpdf import FPDF
+    PDF_DISPONIBLE = True
+except ImportError:
+    PDF_DISPONIBLE = False
+
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
 def crear_db():
     conn = sqlite3.connect('gestion_pasantias.db')
@@ -20,8 +27,6 @@ def crear_db():
             estado TEXT
         )
     ''')
-    
-    # Migraciones seguras para nuevas columnas
     try:
         c.execute("ALTER TABLE ordenes ADD COLUMN tecnico TEXT")
     except sqlite3.OperationalError: pass
@@ -69,7 +74,6 @@ def eliminar_orden(id_orden):
 
 def obtener_datos():
     conn = sqlite3.connect('gestion_pasantias.db')
-    # Forzamos un orden específico de columnas para evitar problemas de visualización
     df = pd.read_sql_query('''
         SELECT id, nro_orden, fecha, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones 
         FROM ordenes 
@@ -77,6 +81,111 @@ def obtener_datos():
     ''', conn)
     conn.close()
     return df
+
+# --- MOTOR DE GENERACIÓN DE PDF ---
+def fabricar_pdf_cotizacion(datos_orden, mano_obra, repuestos, detalles_factura, validez):
+    pdf = FPDF()
+    pdf.add_page()
+    
+    # 1. Búsqueda y renderizado del logotipo
+    archivos_locales = os.listdir(".")
+    logo_detectado = None
+    for archivo in archivos_locales:
+        if archivo.lower().startswith("logo_elinplast"):
+            logo_detectado = archivo
+            break
+    
+    if logo_detectado:
+        try: pdf.image(logo_detectado, 12, 10, 45)
+        except: pass
+        
+    # 2. Encabezado institucional de la Empresa
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(55) 
+    pdf.cell(0, 7, "ELINPLAST AUTOMATISMOS, C.A.", ln=1, align="R")
+    pdf.set_font("Arial", "", 9)
+    pdf.cell(0, 4, "RIF: J-31245678-0", ln=1, align="R")
+    pdf.cell(0, 4, "Maracay, Estado Aragua, Venezuela", ln=1, align="R")
+    pdf.cell(0, 4, "Servicios de Automatizacion y Control Industrial", ln=1, align="R")
+    
+    pdf.ln(15)
+    
+    # 3. Título del Documento Técnico
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "PRESUPUESTO DE SERVICIO TECNICO", ln=1, align="C")
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 5, f"Orden de Referencia: {datos_orden['nro_orden']}", ln=1, align="C")
+    pdf.ln(6)
+    
+    # 4. Bloque 1: Datos del Cliente y el Equipo
+    pdf.set_fill_color(230, 235, 245)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 6, " 1. DATOS DE IDENTIFICACION", border=1, ln=1, fill=True)
+    
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(45, 6, " Empresa Cliente:", border=1)
+    pdf.cell(0, 6, f" {datos_orden['empresa_entrega']}", border=1, ln=1)
+    pdf.cell(45, 6, " Equipo Evaluado:", border=1)
+    pdf.cell(0, 6, f" {datos_orden['equipo']}", border=1, ln=1)
+    pdf.cell(45, 6, " Modelo / Nro Serial:", border=1)
+    pdf.cell(0, 6, f" {datos_orden['modelo']} / {datos_orden['serial']}", border=1, ln=1)
+    pdf.cell(45, 6, " Fecha de Registro:", border=1)
+    pdf.cell(0, 6, f" {datos_orden['fecha']}", border=1, ln=1)
+    pdf.cell(45, 6, " Estatus en Sistema:", border=1)
+    pdf.cell(0, 6, f" {datos_orden['estado']}", border=1, ln=1)
+    
+    pdf.ln(5)
+    
+    # 5. Bloque 2: Diagnóstico e Ingeniería aplicada
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 6, " 2. DETALLES DEL INFORME TECNICO Y DIAGNOSTICO", border=1, ln=1, fill=True)
+    pdf.set_font("Arial", "", 10)
+    
+    obs_taller = datos_orden['observaciones'] if datos_orden['observaciones'] else "Equipo en fase de revision."
+    texto_informe = f"Descripcion de trabajos / Repuestos requeridos:\n{detalles_factura}\n\nHistorial de observaciones en Taller:\n{obs_taller}"
+    pdf.multi_cell(0, 6, texto_informe, border=1)
+    
+    pdf.ln(5)
+    
+    # 6. Bloque 3: Desglose de Costos (Balance Económico)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(0, 6, " 3. BALANCE ECONOMICO ESTIMADO", border=1, ln=1, fill=True)
+    
+    pdf.set_font("Arial", "B", 10)
+    pdf.cell(130, 6, " Concepto / Descripcion del Servicio", border=1, align="C")
+    pdf.cell(60, 6, "Monto (USD)", border=1, ln=1, align="C")
+    
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(130, 6, " Servicio Tecnico Especializado e Ingenieria de Laboratorio", border=1)
+    pdf.cell(60, 6, f" ${mano_obra:,.2f}", border=1, ln=1, align="R")
+    
+    pdf.cell(130, 6, " Materiales, Componentes Electronicos y Repuestos integrados", border=1)
+    pdf.cell(60, 6, f" ${repuestos:,.2f}", border=1, ln=1, align="R")
+    
+    total_general = mano_obra + repuestos
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(130, 6, " TOTAL NETO A FACTURAR:", border=1)
+    pdf.cell(60, 6, f" ${total_general:,.2f}", border=1, ln=1, align="R")
+    
+    pdf.ln(6)
+    
+    # 7. Cláusulas de Cierre
+    pdf.set_font("Arial", "I", 9)
+    pdf.cell(0, 5, f"(*) Validez de la Oferta: {validez}.", ln=1)
+    pdf.cell(0, 5, "(*) Precios expresados en divisas extranjeras (USD) de acuerdo a las normativas de intercambio.", ln=1)
+    pdf.cell(0, 5, "Documento digitalizado generado por el Sistema Computarizado de Gestion de Elinplast Automatismos.", ln=1)
+    
+    # Guardado físico temporal
+    nombre_archivo = "temp_cotizacion_elinplast.pdf"
+    pdf.output(nombre_archivo)
+    
+    # Lectura binaria para retornar los bytes a Streamlit
+    with open(nombre_archivo, "rb") as f:
+        bytes_pdf = f.read()
+    
+    os.remove(nombre_archivo) # Limpieza del archivo temporal
+    return bytes_pdf
+
 
 # --- INTERFAZ DE USUARIO (STREAMLIT) ---
 def main():
@@ -111,17 +220,20 @@ def main():
     st.markdown("<h1>SISTEMA DE GESTIÓN DE SERVICIOS</h1>", unsafe_allow_html=True)
     st.write("---")
 
-    pestaña_registro, pestaña_salida, pestaña_historial = st.tabs(["📝 Registrar Entrada", "📤 Registrar Salida", "📊 Historial Corporativo"])
+    # Definición de las 4 pestañas del sistema actual
+    pestaña_registro, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
+        "📝 Registrar Entrada", 
+        "📤 Registrar Salida", 
+        "🧾 Generar Presupuesto", 
+        "📊 Historial Corporativo"
+    ])
 
     # --- PESTAÑA 1: FORMULARIO DE ENTRADA ---
     with pestaña_registro:
         st.subheader("📥 Recolección de Datos de Entrada")
         with st.form("formulario_entrada"):
-            
-            # Campo principal para el número correlativo de la empresa
             nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
             st.write("---")
-            
             col1, col2 = st.columns(2)
             with col1:
                 empresa = st.text_input("Empresa que entrega", placeholder="Ej: Cliente / Proveedor")
@@ -129,10 +241,8 @@ def main():
             with col2:
                 equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
                 modelo = st.text_input("Modelo", placeholder="Código de modelo")
-            
             serial = st.text_input("Número de Serial / Serie")
             estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
-            
             enviar = st.form_submit_button("💾 Guardar y Procesar Entrada")
 
         if enviar:
@@ -141,36 +251,29 @@ def main():
                 st.success(f"✅ Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
                 st.rerun()
             else:
-                st.warning("⚠️ Campos obligatorios faltantes. Asegúrese de rellenar el Número de Orden, Empresa, Receptor, Equipo y Serial.")
+                st.warning("⚠️ Campos obligatorios faltantes.")
 
     # --- PESTAÑA 2: FORMULARIO DE SALIDA ---
     with pestaña_salida:
         st.subheader("📤 Cierre Técnico y Datos de Salida")
         datos_originales = obtener_datos()
-        
         if not datos_originales.empty:
-            # Reemplazamos los valores nulos antiguos por un texto amigable para que no falle al mostrar las opciones
             datos_originales['nro_orden'] = datos_originales['nro_orden'].fillna('S/N')
-            
             opciones_equipos = [
-                f"ID Sistema: {row['id']} | Nro Orden: {row['nro_orden']} - {row['equipo']} (Serial: {row['serial']})" 
+                f"ID Sistema: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']}" 
                 for _, row in datos_originales.iterrows()
             ]
-            
             seleccion = st.selectbox("Seleccione la orden que va a egresar / ser entregada:", opciones_equipos)
             id_seleccionado = int(seleccion.split(" | ")[0].replace("ID Sistema: ", ""))
             
             with st.form("formulario_salida"):
-                tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", placeholder="Nombre del técnico o ingeniero")
-                
+                tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", placeholder="Nombre del técnico")
                 col_fechas = st.columns(2)
                 with col_fechas[0]:
-                    fecha_salida = st.date_input("Fecha de salida del equipo", datetime.now())
+                    fecha_salida = st.date_input("Fecha de salida", datetime.now())
                 with col_fechas[1]:
                     nuevo_estado = st.selectbox("Actualizar Estado Final", ["Reparado", "Entregado", "No Reparable"])
-                
-                observaciones = st.text_area("Observaciones de reparación / Diagnóstico técnico", placeholder="Detalles del trabajo realizado...")
-                
+                observaciones = st.text_area("Observaciones de reparación / Diagnóstico técnico")
                 enviar_salida = st.form_submit_button("📤 Registrar Salida y Actualizar Orden")
                 
             if enviar_salida:
@@ -179,30 +282,85 @@ def main():
                     st.success("✅ Cierre de orden almacenado correctamente.")
                     st.rerun()
                 else:
-                    st.warning("⚠️ Por favor, rellene los campos de técnico y observaciones.")
+                    st.warning("⚠️ Por favor, rellene los campos obligatorios.")
         else:
             st.info("No hay equipos en la base de datos para registrar una salida.")
 
-    # --- PESTAÑA 3: HISTORIAL, BUSCADOR, EXPORTACIÓN Y ELIMINACIÓN ---
+    # --- NUEVA PESTAÑA 3: GENERACIÓN AUTOMÁTICA DE DOCUMENTOS EN PDF ---
+    with pestaña_documentos:
+        st.subheader("🧾 Facturación Estructurada y Notas de Presupuesto")
+        
+        if not PDF_DISPONIBLE:
+            st.error("❌ Módulo Inactivo: La librería 'fpdf2' no está instalada en el entorno de Python local.")
+            st.info("💡 Solución: Abre la terminal de Visual Studio Code y ejecuta el comando: 'pip install fpdf2'. Luego refresca esta página.")
+        else:
+            datos_db = obtener_datos()
+            if not datos_db.empty:
+                datos_db['nro_orden'] = datos_db['nro_orden'].fillna('S/N')
+                
+                # Menú de selección de órdenes cargadas
+                opciones_pdf = [
+                    f"{row['id']} | Orden: {row['nro_orden']} - Cliente: {row['empresa_entrega']} ({row['equipo']})"
+                    for _, row in datos_db.iterrows()
+                ]
+                seleccion_pdf = st.selectbox("Seleccione la orden para confeccionar el PDF:", opciones_pdf)
+                id_pdf = int(seleccion_pdf.split(" | ")[0])
+                
+                # Extraemos la fila de datos seleccionada de forma exacta
+                fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
+                
+                st.write("---")
+                st.markdown("#### 💰 Configuración Financiera del Presupuesto")
+                
+                with st.form("formulario_pdf"):
+                    col_costos = st.columns(2)
+                    with col_costos[0]:
+                        mano_obra = st.number_input("Costo de Ingeniería / Mano de Obra (USD)", min_value=0.0, value=50.0, step=5.0)
+                    with col_costos[1]:
+                        repuestos = st.number_input("Costo de Componentes / Repuestos (USD)", min_value=0.0, value=0.0, step=5.0)
+                    
+                    validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
+                    detalles_factura = st.text_area(
+                        "Detalle de Trabajos y Repuestos a Incorporar en el PDF:", 
+                        placeholder="Ej: Reemplazo de IGBT quemados, sustitución de capacitores de bus de DC y pruebas dinámicas en banco de carga."
+                    )
+                    
+                    hacer_pdf = st.form_submit_button("⚙️ Procesar y Preparar Documento PDF")
+                
+                if hacer_pdf:
+                    if detalles_factura:
+                        # Se invoca al motor de generación binaria
+                        pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
+                        
+                        st.success("🎉 ¡El documento PDF ha sido estructurado con éxito por el sistema!")
+                        
+                        # Botón de descarga nativa en el navegador
+                        st.download_button(
+                            label="📥 Descargar Documento Oficial en PDF",
+                            data=pdf_bloque_bytes,
+                            file_name=f"Presupuesto_Elinplast_Orden_{fila_seleccionada['nro_orden']}.pdf",
+                            mime="application/pdf"
+                        )
+                    else:
+                        st.warning("⚠️ Describa los trabajos o repuestos para poder armar el cuerpo del presupuesto.")
+            else:
+                st.info("No hay registros disponibles en la base de datos para facturar.")
+
+    # --- PESTAÑA 4: HISTORIAL CORPORATIVO ---
     with pestaña_historial:
         st.subheader("📋 Registros Almacenados en la Base de Datos")
         datos = obtener_datos()
-        
         if not datos.empty:
-            # Mapeo exacto de los nombres visuales de las columnas
             datos.columns = [
                 "ID Sistema", "Nro Orden Empresa", "Fecha Entrada", "Empresa Emisora", "Recibido Por", 
                 "Equipo Electrónico", "Modelo", "Nro Serial", "Estado Actual",
                 "Técnico Asignado", "Fecha Salida", "Observaciones de Reparación"
             ]
-            
             busqueda = st.text_input("🔍 Filtro dinámico: Buscar por Nro de Orden, Equipo, Serial o Empresa", "")
-            
             if busqueda:
-                # Nos aseguramos de rellenar vacíos antes de buscar con str.contains
                 datos_busqueda = datos.fillna('')
                 datos_filtrados = datos[
-                    datos_busqueda["Nro Orden Empresa"].astype(st).str.contains(busqueda, case=False, na=False) |
+                    datos_busqueda["Nro Orden Empresa"].astype(str).str.contains(busqueda, case=False, na=False) |
                     datos_busqueda["Equipo Electrónico"].str.contains(busqueda, case=False, na=False) |
                     datos_busqueda["Nro Serial"].str.contains(busqueda, case=False, na=False) |
                     datos_busqueda["Empresa Emisora"].str.contains(busqueda, case=False, na=False)
@@ -215,7 +373,6 @@ def main():
             
             csv_data = datos_filtrados.to_csv(index=False, sep=';').encode('utf-8-sig')
             fecha_reporte = datetime.now().strftime("%Y%m%d")
-            
             st.download_button(
                 label="📥 Descargar Tabla Actual a Excel (.csv)",
                 data=csv_data,
@@ -224,24 +381,20 @@ def main():
             )
             
             st.write("---")
-            with st.expander("🗑️ Zona de Corrección Administrativa"):
+            with st.expander("🗑️ Zona de Corrección Administrativa (Eliminar Órdenes Mal Anotadas)"):
                 st.warning("⚠️ Atención: La eliminación de registros es permanente e irreversible.")
-                
                 datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
                 opciones_eliminar = [
-                    f"ID: {row['ID Sistema']} | Orden: {row['Nro Orden Empresa']} | {row['Equipo Electrónico']} (Serial: {row['Nro Serial']})"
+                    f"ID: {row['ID Sistema']} | Orden: {row['Nro Orden Empresa']} | {row['Equipo Electrónico']}"
                     for _, row in datos_filtrados.iterrows()
                 ]
-                
                 seleccion_eliminar = st.selectbox("Seleccione el registro exacto que desea remover:", opciones_eliminar)
-                
                 if seleccion_eliminar:
                     id_a_eliminar = int(seleccion_eliminar.split(" | ")[0].replace("ID: ", ""))
                     confirmar_borrado = st.button("🚨 Eliminar Registro Permanentemente")
-                    
                     if confirmar_borrado:
                         eliminar_orden(id_a_eliminar)
-                        st.success(f"💥 El registro con ID {id_a_eliminar} ha sido removido con éxito.")
+                        st.success(f"💥 El registro con ID {id_a_eliminar} ha sido removido.")
                         st.rerun()
         else:
             st.info("No se han encontrado registros en la base de datos local.")
