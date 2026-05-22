@@ -14,9 +14,9 @@ except ImportError:
 # --- CREDENCIALES DE ACCESO MULTIUSUARIO ---
 # Diccionario de usuarios: "Nombre de Usuario": "Contraseña"
 USUARIOS_PERMITIDOS = {
-    "Taller": "elinplast001",
-    "Proyectos": "elinplast001",
-    "Administracion": "elinplast001"
+    "Taller": "claveTaller1",
+    "Proyectos": "claveProyectos2",
+    "Administracion": "claveAdmin3"
 }
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
@@ -178,15 +178,15 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'> Control de Acceso </h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso Institucional</h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
-            usuario = st.text_input("👤 Usuario", placeholder="Ingrese su usuario ")
+            usuario = st.text_input("👤 Usuario", placeholder="Ingrese su usuario asignado")
             clave = st.text_input("🔑 Contraseña", type="password", placeholder="Ingrese su contraseña")
             st.write("")
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
-        
+            
             if ingresar:
                 # LÓGICA MULTIUSUARIO: Comprueba si el usuario existe y si la clave es la correcta
                 if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario] == clave:
@@ -212,7 +212,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         st.info(f"Usuario activo: **{usuario_actual}**")
         
         st.write("---")
-        if st.button("Cerrar Sesión"):
+        if st.button("🚪 Cerrar Sesión Segura"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
@@ -239,7 +239,7 @@ def mostrar_aplicacion_principal(logo_detectado):
     with pestaña_registro:
         st.subheader("📥 Recolección de Datos de Entrada")
         with st.form("formulario_entrada"):
-            nro_orden = st.text_input(" Número de Orden Asignado ", placeholder="Ej: OPT-045-2026")
+            nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
             st.write("---")
             col1, col2 = st.columns(2)
             with col1:
