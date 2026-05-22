@@ -14,11 +14,11 @@ except ImportError:
 # --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES ---
 # Estructura: "NombreUsuario": {"clave": "SuContraseña", "rol": "super" o "restringido"}
 USUARIOS_PERMITIDOS = {
-    "RD": {"clave": "superrd123", "rol": "super"},
-    "Usuario1": {"clave": "taller2026", "rol": "restringido"},
-    "Usuario2": {"clave": "proyectos2026", "rol": "restringido"},
-    "Usuario3": {"clave": "admin2026", "rol": "restringido"},
-    "Usuario4": {"clave": "auxiliar2026", "rol": "restringido"}
+    "ElinplastRD": {"clave": "elinplast001", "rol": "super"},
+    "JOR": {"clave": "jor123", "rol": "restringido"},
+    "JR": {"clave": "jr123", "rol": "restringido"},
+    "FR": {"clave": "FR123", "rol": "restringido"},
+    "AA": {"clave": "AA123", "rol": "restringido"}
 }
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
