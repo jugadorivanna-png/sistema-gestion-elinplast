@@ -174,7 +174,7 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso Institucional</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso </h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
