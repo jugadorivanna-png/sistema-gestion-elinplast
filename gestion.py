@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit st
 import sqlite3
 import pandas as pd
 from datetime import datetime
@@ -11,12 +11,14 @@ try:
 except ImportError:
     PDF_DISPONIBLE = False
 
-# --- CREDENCIALES DE ACCESO MULTIUSUARIO ---
-# Diccionario de usuarios: "Nombre de Usuario": "Contraseña"
+# --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES ---
+# Estructura: "NombreUsuario": {"clave": "SuContraseña", "rol": "super" o "restringido"}
 USUARIOS_PERMITIDOS = {
-    "Taller": "claveTaller1",
-    "Proyectos": "claveProyectos2",
-    "Administracion": "claveAdmin3"
+    "RD": {"clave": "superrd123", "rol": "super"},
+    "Usuario1": {"clave": "taller2026", "rol": "restringido"},
+    "Usuario2": {"clave": "proyectos2026", "rol": "restringido"},
+    "Usuario3": {"clave": "admin2026", "rol": "restringido"},
+    "Usuario4": {"clave": "auxiliar2026", "rol": "restringido"}
 }
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
@@ -188,10 +190,10 @@ def mostrar_pantalla_login(logo_detectado):
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
             
             if ingresar:
-                # LÓGICA MULTIUSUARIO: Comprueba si el usuario existe y si la clave es la correcta
-                if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario] == clave:
+                # Comprobación de existencia del usuario y verificación de clave
+                if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario]["clave"] == clave:
                     st.session_state['autenticado'] = True
-                    st.session_state['usuario_activo'] = usuario # Guardamos quién entró
+                    st.session_state['usuario_activo'] = usuario
                     st.rerun()
                 else:
                     st.error("❌ Usuario o contraseña incorrectos. Acceso denegado.")
@@ -201,16 +203,16 @@ def mostrar_pantalla_login(logo_detectado):
 def mostrar_aplicacion_principal(logo_detectado):
     crear_db()
 
+    # Recuperación de metadatos del usuario activo
+    usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
+    rol_actual = USUARIOS_PERMITIDOS.get(usuario_actual, {}).get('rol', 'restringido')
+
     # --- BARRA LATERAL (CERRAR SESIÓN) ---
     with st.sidebar:
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
         st.markdown("### 🟢 Panel Administrativo")
-        
-        # Recuperamos el nombre del usuario que inició sesión
-        usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
-        st.info(f"Usuario activo: **{usuario_actual}**")
-        
+        st.info(f"Usuario activo: **{usuario_actual}**\n\nNivel de Acceso: **{rol_actual.upper()}**")
         st.write("---")
         if st.button("🚪 Cerrar Sesión Segura"):
             st.session_state['autenticado'] = False
@@ -228,39 +230,49 @@ def mostrar_aplicacion_principal(logo_detectado):
     st.markdown("<h1>SISTEMA DE GESTIÓN DE SERVICIOS</h1>", unsafe_allow_html=True)
     st.write("---")
 
-    pestaña_registro, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
-        "📝 Registrar Entrada", 
-        "📤 Registrar Salida", 
-        "🧾 Generar Presupuesto", 
-        "📊 Historial Corporativo"
-    ])
+    # --- ENRUTAMIENTO DINÁMICO DE PESTAÑAS SEGÚN EL ROL ---
+    if rol_actual == "super":
+        pestaña_registro, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
+            "📝 Registrar Entrada", 
+            "📤 Registrar Salida", 
+            "🧾 Generar Presupuesto", 
+            "📊 Historial Corporativo"
+        ])
+    else:
+        pestaña_salida, pestaña_historial = st.tabs([
+            "📤 Registrar Salida", 
+            "📊 Historial Corporativo"
+        ])
+        pestaña_registro = None
+        pestaña_documentos = None
 
-    # --- PESTAÑA 1: FORMULARIO DE ENTRADA ---
-    with pestaña_registro:
-        st.subheader("📥 Recolección de Datos de Entrada")
-        with st.form("formulario_entrada"):
-            nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
-            st.write("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                empresa = st.text_input("Empresa que entrega", placeholder="Ej: Cliente / Proveedor")
-                recibe = st.text_input("¿Quién recibe?", placeholder="Nombre del receptor")
-            with col2:
-                equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
-                modelo = st.text_input("Modelo", placeholder="Código de modelo")
-            serial = st.text_input("Número de Serial / Serie")
-            estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
-            enviar = st.form_submit_button("💾 Guardar y Procesar Entrada")
+    # --- PESTAÑA 1: FORMULARIO DE ENTRADA (SOLO SUPERUSUARIO) ---
+    if pestaña_registro:
+        with pestaña_registro:
+            st.subheader("📥 Recolección de Datos de Entrada")
+            with st.form("formulario_entrada"):
+                nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
+                st.write("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    empresa = st.text_input("Empresa que entrega", placeholder="Ej: Cliente / Proveedor")
+                    recibe = st.text_input("¿Quién recibe?", placeholder="Nombre del receptor")
+                with col2:
+                    equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
+                    modelo = st.text_input("Modelo", placeholder="Código de modelo")
+                serial = st.text_input("Número de Serial / Serie")
+                estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
+                enviar = st.form_submit_button("💾 Guardar y Procesar Entrada")
 
-        if enviar:
-            if nro_orden and empresa and recibe and equipo and serial:
-                guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado)
-                st.success(f"✅ Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
-                st.rerun()
-            else:
-                st.warning("⚠️ Campos obligatorios faltantes.")
+            if enviar:
+                if nro_orden and empresa and recibe and equipo and serial:
+                    guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado)
+                    st.success(f"✅ Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Campos obligatorios faltantes.")
 
-    # --- PESTAÑA 2: FORMULARIO DE SALIDA ---
+    # --- PESTAÑA 2: FORMULARIO DE SALIDA (ACCESO GLOBAL) ---
     with pestaña_salida:
         st.subheader("📤 Cierre Técnico y Datos de Salida")
         datos_originales = obtener_datos()
@@ -293,52 +305,53 @@ def mostrar_aplicacion_principal(logo_detectado):
         else:
             st.info("No hay equipos en la base de datos para registrar una salida.")
 
-    # --- PESTAÑA 3: PDF ---
-    with pestaña_documentos:
-        st.subheader("🧾 Facturación Estructurada y Notas de Presupuesto")
-        if not PDF_DISPONIBLE:
-            st.error("❌ Módulo Inactivo: La librería 'fpdf2' no está instalada.")
-        else:
-            datos_db = obtener_datos()
-            if not datos_db.empty:
-                datos_db['nro_orden'] = datos_db['nro_orden'].fillna('S/N')
-                opciones_pdf = [
-                    f"{row['id']} | Orden: {row['nro_orden']} - Cliente: {row['empresa_entrega']} ({row['equipo']})"
-                    for _, row in datos_db.iterrows()
-                ]
-                seleccion_pdf = st.selectbox("Seleccione la orden para confeccionar el PDF:", opciones_pdf)
-                id_pdf = int(seleccion_pdf.split(" | ")[0])
-                fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
-                
-                st.write("---")
-                st.markdown("#### 💰 Configuración Financiera del Presupuesto")
-                with st.form("formulario_pdf"):
-                    col_costos = st.columns(2)
-                    with col_costos[0]:
-                        mano_obra = st.number_input("Costo de Mano de Obra (USD)", min_value=0.0, value=50.0, step=5.0)
-                    with col_costos[1]:
-                        repuestos = st.number_input("Costo de Repuestos (USD)", min_value=0.0, value=0.0, step=5.0)
-                    
-                    validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
-                    detalles_factura = st.text_area("Detalle de Trabajos y Repuestos:")
-                    hacer_pdf = st.form_submit_button("⚙️ Procesar y Preparar Documento PDF")
-                
-                if hacer_pdf:
-                    if detalles_factura:
-                        pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
-                        st.success("🎉 ¡El documento PDF ha sido estructurado con éxito!")
-                        st.download_button(
-                            label="📥 Descargar Documento Oficial en PDF",
-                            data=pdf_bloque_bytes,
-                            file_name=f"Presupuesto_Elinplast_Orden_{fila_seleccionada['nro_orden']}.pdf",
-                            mime="application/pdf"
-                        )
-                    else:
-                        st.warning("⚠️ Describa los trabajos o repuestos para armar el presupuesto.")
+    # --- PESTAÑA 3: PDF (SOLO SUPERUSUARIO) ---
+    if pestaña_documentos:
+        with pestaña_documentos:
+            st.subheader("🧾 Facturación Estructurada y Notas de Presupuesto")
+            if not PDF_DISPONIBLE:
+                st.error("❌ Módulo Inactivo: La librería 'fpdf2' no está instalada.")
             else:
-                st.info("No hay registros disponibles para facturar.")
+                datos_db = obtener_datos()
+                if not datos_db.empty:
+                    datos_db['nro_orden'] = datos_db['nro_orden'].fillna('S/N')
+                    opciones_pdf = [
+                        f"{row['id']} | Orden: {row['nro_orden']} - Cliente: {row['empresa_entrega']} ({row['equipo']})"
+                        for _, row in datos_db.iterrows()
+                    ]
+                    seleccion_pdf = st.selectbox("Seleccione la orden para confeccionar el PDF:", opciones_pdf)
+                    id_pdf = int(seleccion_pdf.split(" | ")[0])
+                    fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
+                    
+                    st.write("---")
+                    st.markdown("#### 💰 Configuración Financiera del Presupuesto")
+                    with st.form("formulario_pdf"):
+                        col_costos = st.columns(2)
+                        with col_costos[0]:
+                            mano_obra = st.number_input("Costo de Mano de Obra (USD)", min_value=0.0, value=50.0, step=5.0)
+                        with col_costos[1]:
+                            repuestos = st.number_input("Costo de Repuestos (USD)", min_value=0.0, value=0.0, step=5.0)
+                        
+                        validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
+                        detalles_factura = st.text_area("Detalle de Trabajos y Repuestos:")
+                        hacer_pdf = st.form_submit_button("⚙️ Procesar y Preparar Documento PDF")
+                    
+                    if hacer_pdf:
+                        if detalles_factura:
+                            pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
+                            st.success("🎉 ¡El documento PDF ha sido estructurado con éxito!")
+                            st.download_button(
+                                label="📥 Descargar Documento Oficial en PDF",
+                                data=pdf_bloque_bytes,
+                                file_name=f"Presupuesto_Elinplast_Orden_{fila_seleccionada['nro_orden']}.pdf",
+                                mime="application/pdf"
+                            )
+                        else:
+                            st.warning("⚠️ Describa los trabajos o repuestos para armar el presupuesto.")
+                else:
+                    st.info("No hay registros disponibles para facturar.")
 
-    # --- PESTAÑA 4: HISTORIAL ---
+    # --- PESTAÑA 4: HISTORIAL (ACCESO GLOBAL) ---
     with pestaña_historial:
         st.subheader("📋 Registros Almacenados en la Base de Datos")
         datos = obtener_datos()
@@ -412,7 +425,7 @@ def main():
 
     if 'autenticado' not in st.session_state:
         st.session_state['autenticado'] = False
-        st.session_state['usuario_activo'] = "" # Inicializamos la memoria del usuario
+        st.session_state['usuario_activo'] = ""
 
     if not st.session_state['autenticado']:
         mostrar_pantalla_login(logo_detectado)
