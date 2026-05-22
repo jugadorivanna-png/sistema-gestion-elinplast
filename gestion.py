@@ -180,7 +180,7 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso Institucional</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso </h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
@@ -214,7 +214,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         st.markdown("### 🟢 Panel Administrativo")
         st.info(f"Usuario activo: **{usuario_actual}**\n\nNivel de Acceso: **{rol_actual.upper()}**")
         st.write("---")
-        if st.button("🚪 Cerrar Sesión Segura"):
+        if st.button("🚪 Cerrar Sesión"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
@@ -225,7 +225,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         with col_logo:
             st.image(logo_detectado, use_container_width=True)
     else:
-        st.title("🏭 ELINPLAST AUTOMATISMOS, C.A.")
+        st.title(" ELINPLAST AUTOMATISMOS, C.A.")
     
     st.markdown("<h1>SISTEMA DE GESTIÓN DE SERVICIOS</h1>", unsafe_allow_html=True)
     st.write("---")
@@ -249,7 +249,7 @@ def mostrar_aplicacion_principal(logo_detectado):
     # --- PESTAÑA 1: FORMULARIO DE ENTRADA (SOLO SUPERUSUARIO) ---
     if pestaña_registro:
         with pestaña_registro:
-            st.subheader("📥 Recolección de Datos de Entrada")
+            st.subheader(" Recolección de Datos de Entrada")
             with st.form("formulario_entrada"):
                 nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
                 st.write("---")
@@ -385,7 +385,7 @@ def mostrar_aplicacion_principal(logo_detectado):
             )
             
             st.write("---")
-            with st.expander("🗑️ Zona de Corrección Administrativa"):
+            with st.expander("🗑️ Zona de Corrección "):
                 st.warning("⚠️ Atención: La eliminación de registros es permanente e irreversible.")
                 datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
                 opciones_eliminar = [
