@@ -178,11 +178,11 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso Institucional</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'> Control de Acceso </h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
-            usuario = st.text_input("👤 Usuario", placeholder="Ingrese su usuario asignado")
+            usuario = st.text_input("👤 Usuario", placeholder="Ingrese su usuario ")
             clave = st.text_input("🔑 Contraseña", type="password", placeholder="Ingrese su contraseña")
             st.write("")
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
@@ -212,7 +212,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         st.info(f"Usuario activo: **{usuario_actual}**")
         
         st.write("---")
-        if st.button("🚪 Cerrar Sesión Segura"):
+        if st.button("Cerrar Sesión"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
