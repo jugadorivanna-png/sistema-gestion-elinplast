@@ -11,9 +11,13 @@ try:
 except ImportError:
     PDF_DISPONIBLE = False
 
-# --- CREDENCIALES DE ACCESO AL SISTEMA ---
-USUARIO_SISTEMA = "Taller"
-CLAVE_SISTEMA = "elinplast001"
+# --- CREDENCIALES DE ACCESO MULTIUSUARIO ---
+# Diccionario de usuarios: "Nombre de Usuario": "Contraseña"
+USUARIOS_PERMITIDOS = {
+    "Taller": "elinplast001",
+    "Proyectos": "elinplast001",
+    "Administracion": "elinplast001"
+}
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS ---
 def crear_db():
@@ -174,7 +178,7 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso </h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso Institucional</h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
@@ -184,11 +188,13 @@ def mostrar_pantalla_login(logo_detectado):
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
             
             if ingresar:
-                if usuario == USUARIO_SISTEMA and clave == CLAVE_SISTEMA:
+                # LÓGICA MULTIUSUARIO: Comprueba si el usuario existe y si la clave es la correcta
+                if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario] == clave:
                     st.session_state['autenticado'] = True
+                    st.session_state['usuario_activo'] = usuario # Guardamos quién entró
                     st.rerun()
                 else:
-                    st.error("❌ Credenciales incorrectas. Acceso denegado.")
+                    st.error("❌ Usuario o contraseña incorrectos. Acceso denegado.")
 
 
 # --- MÓDULO 2: APLICACIÓN PRINCIPAL (EL SISTEMA) ---
@@ -200,10 +206,15 @@ def mostrar_aplicacion_principal(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
         st.markdown("### 🟢 Panel Administrativo")
-        st.info(f"Usuario activo: **{USUARIO_SISTEMA}**")
+        
+        # Recuperamos el nombre del usuario que inició sesión
+        usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
+        st.info(f"Usuario activo: **{usuario_actual}**")
+        
         st.write("---")
         if st.button("🚪 Cerrar Sesión Segura"):
             st.session_state['autenticado'] = False
+            st.session_state['usuario_activo'] = ""
             st.rerun()
 
     # --- ENCABEZADO NORMAL ---
@@ -401,6 +412,7 @@ def main():
 
     if 'autenticado' not in st.session_state:
         st.session_state['autenticado'] = False
+        st.session_state['usuario_activo'] = "" # Inicializamos la memoria del usuario
 
     if not st.session_state['autenticado']:
         mostrar_pantalla_login(logo_detectado)
