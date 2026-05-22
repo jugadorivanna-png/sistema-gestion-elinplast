@@ -186,7 +186,7 @@ def mostrar_pantalla_login(logo_detectado):
             clave = st.text_input("🔑 Contraseña", type="password", placeholder="Ingrese su contraseña")
             st.write("")
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
-            
+        
             if ingresar:
                 # LÓGICA MULTIUSUARIO: Comprueba si el usuario existe y si la clave es la correcta
                 if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario] == clave:
@@ -239,7 +239,7 @@ def mostrar_aplicacion_principal(logo_detectado):
     with pestaña_registro:
         st.subheader("📥 Recolección de Datos de Entrada")
         with st.form("formulario_entrada"):
-            nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
+            nro_orden = st.text_input(" Número de Orden Asignado ", placeholder="Ej: OPT-045-2026")
             st.write("---")
             col1, col2 = st.columns(2)
             with col1:
