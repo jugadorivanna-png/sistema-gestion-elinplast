@@ -107,8 +107,8 @@ def obtener_datos():
 
 # --- API DE NOTIFICACIONES (TELEGRAM) ---
 def disparar_alerta_api(nro_orden, equipo, tecnico):
-    TOKEN_BOT = "" 
-    CHAT_ID_ADMIN = ""
+    TOKEN_BOT = " 8977110110:AAEyRn6N_G63isqG9gOhdjnzLp0bPKphoQM " 
+    CHAT_ID_ADMIN = " 8977110110 "
     
     if not TOKEN_BOT or not CHAT_ID_ADMIN:
         return 
