@@ -11,8 +11,7 @@ try:
 except ImportError:
     PDF_DISPONIBLE = False
 
-# --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES ---
-# Estructura: "NombreUsuario": {"clave": "SuContraseña", "rol": "super" o "restringido"}
+# --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES (ACTUALIZADA) ---
 USUARIOS_PERMITIDOS = {
     "ElinplastRD": {"clave": "elinplast001", "rol": "super"},
     "JOR": {"clave": "jor123", "rol": "restringido"},
@@ -56,6 +55,18 @@ def guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado):
         INSERT INTO ordenes (fecha, nro_orden, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '')
     ''', (fecha_actual, nro_orden, empresa, recibe, equipo, modelo, serial, estado))
+    conn.commit()
+    conn.close()
+
+# NUEVA FUNCIÓN: Asignar un técnico específico a una orden
+def asignar_tecnico(id_orden, tecnico):
+    conn = sqlite3.connect('gestion_pasantias.db')
+    c = conn.cursor()
+    c.execute('''
+        UPDATE ordenes 
+        SET tecnico = ?
+        WHERE id = ?
+    ''', (tecnico, id_orden))
     conn.commit()
     conn.close()
 
@@ -180,7 +191,7 @@ def mostrar_pantalla_login(logo_detectado):
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
             
-        st.markdown("<h3 style='text-align: center; color: #0b2545;'>🔒 Control de Acceso </h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='text-align: center; color: #0b2545;'>Control de Acceso</h3>", unsafe_allow_html=True)
         st.write("---")
         
         with st.form("formulario_login"):
@@ -190,7 +201,6 @@ def mostrar_pantalla_login(logo_detectado):
             ingresar = st.form_submit_button("Entrar al Sistema ➔")
             
             if ingresar:
-                # Comprobación de existencia del usuario y verificación de clave
                 if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario]["clave"] == clave:
                     st.session_state['autenticado'] = True
                     st.session_state['usuario_activo'] = usuario
@@ -203,18 +213,17 @@ def mostrar_pantalla_login(logo_detectado):
 def mostrar_aplicacion_principal(logo_detectado):
     crear_db()
 
-    # Recuperación de metadatos del usuario activo
     usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
     rol_actual = USUARIOS_PERMITIDOS.get(usuario_actual, {}).get('rol', 'restringido')
 
-    # --- BARRA LATERAL (CERRAR SESIÓN) ---
+    # --- BARRA LATERAL ---
     with st.sidebar:
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
         st.markdown("### 🟢 Panel Administrativo")
         st.info(f"Usuario activo: **{usuario_actual}**\n\nNivel de Acceso: **{rol_actual.upper()}**")
         st.write("---")
-        if st.button("🚪 Cerrar Sesión"):
+        if st.button("Cerrar Sesión"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
@@ -231,9 +240,11 @@ def mostrar_aplicacion_principal(logo_detectado):
     st.write("---")
 
     # --- ENRUTAMIENTO DINÁMICO DE PESTAÑAS SEGÚN EL ROL ---
+    # Al rol "super" le agregamos la pestaña de asignación
     if rol_actual == "super":
-        pestaña_registro, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
+        pestaña_registro, pestaña_asignacion, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
             "📝 Registrar Entrada", 
+            "🧑‍🔧 Asignar Técnico",
             "📤 Registrar Salida", 
             "🧾 Generar Presupuesto", 
             "📊 Historial Corporativo"
@@ -244,6 +255,7 @@ def mostrar_aplicacion_principal(logo_detectado):
             "📊 Historial Corporativo"
         ])
         pestaña_registro = None
+        pestaña_asignacion = None
         pestaña_documentos = None
 
     # --- PESTAÑA 1: FORMULARIO DE ENTRADA (SOLO SUPERUSUARIO) ---
@@ -251,7 +263,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         with pestaña_registro:
             st.subheader(" Recolección de Datos de Entrada")
             with st.form("formulario_entrada"):
-                nro_orden = st.text_input("🔢 Número de Orden Asignado (Interno Elinplast)", placeholder="Ej: OPT-045-2026")
+                nro_orden = st.text_input("🔢 Número de Orden", placeholder="Ej: OPT-045-2026")
                 st.write("---")
                 col1, col2 = st.columns(2)
                 with col1:
@@ -272,21 +284,54 @@ def mostrar_aplicacion_principal(logo_detectado):
                 else:
                     st.warning("⚠️ Campos obligatorios faltantes.")
 
-    # --- PESTAÑA 2: FORMULARIO DE SALIDA (ACCESO GLOBAL) ---
+    # --- NUEVA PESTAÑA 2: ASIGNAR TÉCNICO (SOLO SUPERUSUARIO) ---
+    if pestaña_asignacion:
+        with pestaña_asignacion:
+            st.subheader("🧑‍🔧 Asignación de Equipos a Técnicos")
+            st.write("Seleccione una orden del sistema para designar al técnico encargado de su revisión o reparación.")
+            
+            datos_asignacion = obtener_datos()
+            if not datos_asignacion.empty:
+                datos_asignacion['nro_orden'] = datos_asignacion['nro_orden'].fillna('S/N')
+                
+                # Lista desplegable que muestra el estado actual de asignación
+                opciones_asig = [
+                    f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} (Resp: {row['tecnico'] if row['tecnico'] else 'Sin asignar'})"
+                    for _, row in datos_asignacion.iterrows()
+                ]
+                
+                seleccion_asig = st.selectbox("Seleccione la orden a asignar:", opciones_asig)
+                id_asig = int(seleccion_asig.split(" | ")[0].replace("ID: ", ""))
+                
+                with st.form("formulario_asignacion"):
+                    nuevo_tecnico = st.selectbox("Asignar al Técnico:", ["JOR", "JR", "FR", "AA"])
+                    btn_asignar = st.form_submit_button("✅ Confirmar Asignación")
+                    
+                    if btn_asignar:
+                        asignar_tecnico(id_asig, nuevo_tecnico)
+                        st.success(f"✅ La orden ha sido asignada exitosamente al técnico {nuevo_tecnico}.")
+                        st.rerun()
+            else:
+                st.info("No hay registros en el sistema para asignar.")
+
+    # --- PESTAÑA 3: FORMULARIO DE SALIDA (ACCESO GLOBAL) ---
     with pestaña_salida:
-        st.subheader("📤 Cierre Técnico y Datos de Salida")
+        st.subheader(" Cierre Técnico y Datos de Salida")
         datos_originales = obtener_datos()
         if not datos_originales.empty:
             datos_originales['nro_orden'] = datos_originales['nro_orden'].fillna('S/N')
+            
+            # Mostramos en el menú a quién pertenece cada equipo para que el técnico sepa cuál elegir
             opciones_equipos = [
-                f"ID Sistema: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']}" 
+                f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} (Resp: {row['tecnico'] if row['tecnico'] else 'Nadie'})" 
                 for _, row in datos_originales.iterrows()
             ]
             seleccion = st.selectbox("Seleccione la orden que va a egresar / ser entregada:", opciones_equipos)
-            id_seleccionado = int(seleccion.split(" | ")[0].replace("ID Sistema: ", ""))
+            id_seleccionado = int(seleccion.split(" | ")[0].replace("ID: ", ""))
             
             with st.form("formulario_salida"):
-                tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", placeholder="Nombre del técnico")
+                # El sistema autocompleta el nombre de quien inició sesión
+                tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", value=usuario_actual)
                 col_fechas = st.columns(2)
                 with col_fechas[0]:
                     fecha_salida = st.date_input("Fecha de salida", datetime.now())
@@ -305,7 +350,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         else:
             st.info("No hay equipos en la base de datos para registrar una salida.")
 
-    # --- PESTAÑA 3: PDF (SOLO SUPERUSUARIO) ---
+    # --- PESTAÑA 4: PDF (SOLO SUPERUSUARIO) ---
     if pestaña_documentos:
         with pestaña_documentos:
             st.subheader("🧾 Facturación Estructurada y Notas de Presupuesto")
@@ -324,7 +369,7 @@ def mostrar_aplicacion_principal(logo_detectado):
                     fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
                     
                     st.write("---")
-                    st.markdown("#### 💰 Configuración Financiera del Presupuesto")
+                    st.markdown("#### Configuración Financiera del Presupuesto")
                     with st.form("formulario_pdf"):
                         col_costos = st.columns(2)
                         with col_costos[0]:
@@ -334,12 +379,12 @@ def mostrar_aplicacion_principal(logo_detectado):
                         
                         validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
                         detalles_factura = st.text_area("Detalle de Trabajos y Repuestos:")
-                        hacer_pdf = st.form_submit_button("⚙️ Procesar y Preparar Documento PDF")
+                        hacer_pdf = st.form_submit_button(" Procesar y Preparar Documento PDF")
                     
                     if hacer_pdf:
                         if detalles_factura:
                             pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
-                            st.success("🎉 ¡El documento PDF ha sido estructurado con éxito!")
+                            st.success(" ¡El documento PDF ha sido estructurado con éxito!")
                             st.download_button(
                                 label="📥 Descargar Documento Oficial en PDF",
                                 data=pdf_bloque_bytes,
@@ -351,7 +396,7 @@ def mostrar_aplicacion_principal(logo_detectado):
                 else:
                     st.info("No hay registros disponibles para facturar.")
 
-    # --- PESTAÑA 4: HISTORIAL (ACCESO GLOBAL) ---
+    # --- PESTAÑA 5: HISTORIAL (ACCESO GLOBAL) ---
     with pestaña_historial:
         st.subheader("📋 Registros Almacenados en la Base de Datos")
         datos = obtener_datos()
@@ -385,7 +430,7 @@ def mostrar_aplicacion_principal(logo_detectado):
             )
             
             st.write("---")
-            with st.expander("🗑️ Zona de Corrección "):
+            with st.expander("🗑️ Zona de Corrección Administrativa"):
                 st.warning("⚠️ Atención: La eliminación de registros es permanente e irreversible.")
                 datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
                 opciones_eliminar = [
