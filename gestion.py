@@ -106,21 +106,24 @@ def obtener_datos():
     return df
 
 # --- API DE NOTIFICACIONES (TELEGRAM) ---
-def disparar_alerta_api(nro_orden, equipo, tecnico, estado, obs):
+def disparar_alerta_api(nro_orden, equipo, tecnico, obs):
     TOKEN_BOT = "8977110110:AAEyRn6N_G63isqG9gOhdjnzLp0bPKphoQM" 
     CHAT_ID_ADMIN = "549012168"
+    
     
     if not TOKEN_BOT or not CHAT_ID_ADMIN:
         return 
         
     url = f"https://api.telegram.org/bot{TOKEN_BOT}/sendMessage"
-    # Ajuste: Incluye el estado y las observaciones recibidas
-    mensaje_formateado = f"ACTUALIZACIÓN DE TALLER\n\nOrden: {nro_orden}\nEquipo: {equipo}\nTécnico: {tecnico}\nEstado: *{estado}*\nObs: {obs}"
+    mensaje_formateado = f"ALERTA DE TALLER: EQUIPO REPARADO\n\nEl sistema de Elinplast Automatismos detectó una actualización:\n\nOrden Nro: {nro_orden}\nEquipo: {equipo}\nTécnico: {tecnico}\n\nEl equipo está listo para facturación y entrega."
     
     try:
-        response = requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado, 'parse_mode': 'Markdown'})
+        # Quitamos el parse_mode que causa conflictos y agregamos diagnóstico
+        response = requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado})
+        
         if response.status_code != 200:
-            st.error(f"Error de Telegram: {response.text}")
+            st.error(f"Error de Telegram (Código {response.status_code}): {response.text}")
+            
     except Exception as e:
         st.error(f"Error de conexión con la API: {e}")
 
@@ -240,17 +243,30 @@ def mostrar_aplicacion_principal(logo_detectado):
     usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
     rol_actual = USUARIOS_PERMITIDOS.get(usuario_actual, {}).get('rol', 'restringido')
 
+    # --- MENÚ DE NAVEGACIÓN LATERAL ---
     with st.sidebar:
         if logo_detectado:
             st.image(logo_detectado, use_container_width=True)
+            
         st.markdown("### Panel Administrativo")
-        st.info(f"Usuario activo: **{usuario_actual}**\n\nNivel de Acceso: **{rol_actual.upper()}**")
+        st.info(f"Usuario activo: **{usuario_actual}**\n\nAcceso: **{rol_actual.upper()}**")
+        st.write("---")
+        
+        st.markdown("#### Menú de Navegación")
+        if rol_actual == "super":
+            opciones_menu = ["Panel de Control", "Registrar Entrada", "Asignar y Priorizar", "Registrar Salida", "Generar Presupuesto", "Historial Corporativo"]
+        else:
+            opciones_menu = ["Panel de Control", "Registrar Salida", "Historial Corporativo"]
+            
+        menu_seleccionado = st.radio("", opciones_menu, label_visibility="collapsed")
+        
         st.write("---")
         if st.button("Cerrar Sesión"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
 
+    # --- ENCABEZADO SUPERIOR ---
     if logo_detectado:
         col_espacio1, col_logo, col_espacio2 = st.columns([1, 2, 1])
         with col_logo:
@@ -261,27 +277,10 @@ def mostrar_aplicacion_principal(logo_detectado):
     st.markdown("<h1>SISTEMA DE GESTIÓN DE SERVICIOS</h1>", unsafe_allow_html=True)
     st.write("---")
 
-    if rol_actual == "super":
-        pestaña_dashboard, pestaña_registro, pestaña_asignacion, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
-            "Panel de Control",
-            "Registrar Entrada", 
-            "Asignar y Priorizar",
-            "Registrar Salida", 
-            "Generar Presupuesto", 
-            "Historial Corporativo"
-        ])
-    else:
-        pestaña_dashboard, pestaña_salida, pestaña_historial = st.tabs([
-            "Panel de Control",
-            "Registrar Salida", 
-            "Historial Corporativo"
-        ])
-        pestaña_registro = None
-        pestaña_asignacion = None
-        pestaña_documentos = None
+    # --- ENRUTAMIENTO DE PANTALLAS SEGÚN EL MENÚ LATERAL ---
 
-    # --- PESTAÑA 0: DASHBOARD / PANEL DE CONTROL ---
-    with pestaña_dashboard:
+    # 0. PANEL DE CONTROL
+    if menu_seleccionado == "Panel de Control":
         st.subheader("Indicadores Diarios de Taller")
         datos_dash = obtener_datos()
         
@@ -308,118 +307,247 @@ def mostrar_aplicacion_principal(logo_detectado):
         </div>
         """, unsafe_allow_html=True)
 
-    # --- PESTAÑA 1: FORMULARIO DE ENTRADA ---
-    if pestaña_registro:
-        with pestaña_registro:
-            st.subheader("Recolección de Datos de Entrada")
-            with st.form("formulario_entrada"):
-                nro_orden = st.text_input("Número de Orden", placeholder="Ej: OPT-045-2026")
-                st.write("---")
-                col1, col2 = st.columns(2)
-                with col1:
-                    empresa = st.text_input("Cliente", placeholder="Ej: Nombre de la empresa o persona")
-                    recibe = st.text_input("¿Quién recibe?", placeholder="Nombre del receptor")
-                with col2:
-                    equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
-                    modelo = st.text_input("Modelo", placeholder="Código de modelo")
-                
-                prioridad = st.selectbox("Asignar Prioridad (Alerta)", [
-                    "🟢 Estándar", 
-                    "🔴 Emergencia", 
-                    "🟠 Garantía", 
-                    "🟡 Solo revisión y diagnóstico"
-                ])
-                
-                col_fin1, col_fin2 = st.columns(2)
-                with col_fin1:
-                    serial = st.text_input("Número de Serial / Serie")
-                with col_fin2:
-                    estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
-                
-                enviar = st.form_submit_button("Guardar y Procesar Entrada")
+    # 1. REGISTRAR ENTRADA
+    elif menu_seleccionado == "Registrar Entrada":
+        st.subheader("Recolección de Datos de Entrada")
+        with st.form("formulario_entrada"):
+            nro_orden = st.text_input("Número de Orden", placeholder="Ej: OPT-045-2026")
+            st.write("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                empresa = st.text_input("Cliente", placeholder="Ej: Nombre de la empresa o persona")
+                recibe = st.text_input("¿Quién recibe?", placeholder="Nombre del receptor")
+            with col2:
+                equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
+                modelo = st.text_input("Modelo", placeholder="Código de modelo")
+            
+            prioridad = st.selectbox("Asignar Prioridad (Alerta)", [
+                "🟢 Estándar", 
+                "🔴 Emergencia", 
+                "🟠 Garantía", 
+                "🟡 Solo revisión y diagnóstico"
+            ])
+            
+            col_fin1, col_fin2 = st.columns(2)
+            with col_fin1:
+                serial = st.text_input("Número de Serial / Serie")
+            with col_fin2:
+                estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
+            
+            enviar = st.form_submit_button("Guardar y Procesar Entrada")
 
-            if enviar:
-                if nro_orden and empresa and recibe and equipo and serial:
-                    guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado, prioridad)
-                    st.success(f"Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
-                    st.rerun()
-                else:
-                    st.warning("Campos obligatorios faltantes.")
+        if enviar:
+            if nro_orden and empresa and recibe and equipo and serial:
+                guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado, prioridad)
+                st.success(f"Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
+            else:
+                st.warning("Campos obligatorios faltantes.")
 
-    # --- PESTAÑA 2: ASIGNAR TÉCNICO Y PRIORIDAD ---
-    if pestaña_asignacion:
-        with pestaña_asignacion:
-            st.subheader("Asignación de Equipos y Ajuste de Prioridad")
-            datos_asignacion = obtener_datos()
-            if not datos_asignacion.empty:
-                opciones_asig = [f"ID: {row['id']} | {row['equipo']}" for _, row in datos_asignacion.iterrows()]
-                seleccion_asig = st.selectbox("Seleccione la orden:", opciones_asig)
-                id_asig = int(seleccion_asig.split(" | ")[0].replace("ID: ", ""))
-                
-                with st.form("formulario_asignacion"):
-                    col_as1, col_as2 = st.columns(2)
-                    with col_as1:
-                        nuevo_tecnico = st.selectbox("Asignar al Técnico:", ["JOR", "JR", "FR", "AA"])
-                    with col_as2:
-                        nueva_prioridad = st.selectbox("Cambiar Prioridad a:", ["🟢 Estándar", "🔴 Emergencia", "🟠 Garantía", "🟡 Solo revisión"])
-                        
-                    btn_asignar = st.form_submit_button("Guardar Cambios en la Orden")
+    # 2. ASIGNAR Y PRIORIZAR
+    elif menu_seleccionado == "Asignar y Priorizar":
+        st.subheader("Asignación de Equipos y Ajuste de Prioridad")
+        st.write("Seleccione una orden del sistema para designar al técnico encargado o modificar su nivel de urgencia.")
+        
+        datos_asignacion = obtener_datos()
+        if not datos_asignacion.empty:
+            datos_asignacion['nro_orden'] = datos_asignacion['nro_orden'].fillna('S/N')
+            
+            opciones_asig = [
+                f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} | Actual: {row['tecnico'] if row['tecnico'] else 'Sin asignar'} ({row['prioridad']})"
+                for _, row in datos_asignacion.iterrows()
+            ]
+            
+            seleccion_asig = st.selectbox("Seleccione la orden a gestionar:", opciones_asig)
+            id_asig = int(seleccion_asig.split(" | ")[0].replace("ID: ", ""))
+            
+            with st.form("formulario_asignacion"):
+                col_as1, col_as2 = st.columns(2)
+                with col_as1:
+                    nuevo_tecnico = st.selectbox("Asignar al Técnico:", ["JOR", "JR", "FR", "AA"])
+                with col_as2:
+                    nueva_prioridad = st.selectbox("Cambiar Prioridad a:", [
+                        "🟢 Estándar", 
+                        "🔴 Emergencia", 
+                        "🟠 Garantía", 
+                        "🟡 Solo revisión y diagnóstico"
+                    ])
                     
-                    if btn_asignar:
-                        asignar_tecnico_y_prioridad(id_asig, nuevo_tecnico, nueva_prioridad)
-                        st.success("Orden actualizada.")
-                        st.rerun()
+                btn_asignar = st.form_submit_button("Guardar Cambios en la Orden")
+                
+                if btn_asignar:
+                    asignar_tecnico_y_prioridad(id_asig, nuevo_tecnico, nueva_prioridad)
+                    st.success(f"La orden fue actualizada. Técnico: {nuevo_tecnico} | Alerta: {nueva_prioridad}")
+        else:
+            st.info("No hay registros en el sistema.")
 
-    # --- PESTAÑA 3: FORMULARIO DE SALIDA ---
-    with pestaña_salida:
+    # 3. REGISTRAR SALIDA
+    elif menu_seleccionado == "Registrar Salida":
         st.subheader("Cierre Técnico y Datos de Salida")
         datos_originales = obtener_datos()
         if not datos_originales.empty:
-            opciones_equipos = [f"ID: {row['id']} | {row['equipo']}" for _, row in datos_originales.iterrows()]
-            seleccion = st.selectbox("Seleccione la orden:", opciones_equipos)
+            datos_originales['nro_orden'] = datos_originales['nro_orden'].fillna('S/N')
+            opciones_equipos = [
+                f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} (Resp: {row['tecnico'] if row['tecnico'] else 'Nadie'})" 
+                for _, row in datos_originales.iterrows()
+            ]
+            seleccion = st.selectbox("Seleccione la orden que va a egresar / ser entregada:", opciones_equipos)
             id_seleccionado = int(seleccion.split(" | ")[0].replace("ID: ", ""))
             
             with st.form("formulario_salida"):
-                tecnico = st.text_input("¿Quién trabajó el equipo?", value=usuario_actual)
-                est = st.selectbox("Actualizar Estado Final", ["Reparado", "Entregado", "No Reparable"])
-                obs = st.text_area("Observaciones de reparación")
-                enviar_salida = st.form_submit_button("Registrar Salida")
+                tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", value=usuario_actual)
+                col_fechas = st.columns(2)
+                with col_fechas[0]:
+                    fecha_salida = st.date_input("Fecha de salida", datetime.now())
+                with col_fechas[1]:
+                    nuevo_estado = st.selectbox("Actualizar Estado Final", ["Reparado", "Entregado", "No Reparable"])
+                observaciones = st.text_area("Observaciones de reparación / Diagnóstico técnico")
+                enviar_salida = st.form_submit_button("Registrar Salida y Actualizar Orden")
                 
             if enviar_salida:
-                actualizar_salida(id_seleccionado, tecnico, str(datetime.now().date()), obs, est)
-                # SE NOTIFICA CON ESTADO Y OBSERVACIONES
-                info = datos_originales[datos_originales['id'] == id_seleccionado].iloc[0]
-                disparar_alerta_api(info['nro_orden'], info['equipo'], tecnico, est, obs)
-                st.success("Cierre almacenado y notificación enviada.")
-                st.rerun()
+                if tecnico and observaciones:
+                    actualizar_salida(id_seleccionado, tecnico, str(fecha_salida), observaciones, nuevo_estado)
+                    
+                    if nuevo_estado == "Reparado":
+                        info_equipo = datos_originales[datos_originales['id'] == id_seleccionado].iloc[0]
+                        disparar_alerta_api(info_equipo['nro_orden'], info_equipo['equipo'], tecnico)
+                        st.success("Cierre almacenado y notificación enviada a Administración.")
+                    else:
+                        st.success("Cierre de orden almacenado correctamente.")
+                else:
+                    st.warning("Por favor, rellene los campos obligatorios.")
         else:
-            st.info("No hay registros.")
+            st.info("No hay equipos en la base de datos para registrar una salida.")
 
-    # --- PESTAÑA 4: PDF ---
-    if pestaña_documentos:
-        with pestaña_documentos:
-            st.subheader("Facturación")
-            # (Lógica simplificada para mantener tu formato)
-            st.info("Función de PDF disponible.")
+    # 4. GENERAR PRESUPUESTO
+    elif menu_seleccionado == "Generar Presupuesto":
+        st.subheader("Facturación Estructurada y Notas de Presupuesto")
+        if not PDF_DISPONIBLE:
+            st.error("Módulo Inactivo: La librería 'fpdf2' no está instalada.")
+        else:
+            datos_db = obtener_datos()
+            if not datos_db.empty:
+                datos_db['nro_orden'] = datos_db['nro_orden'].fillna('S/N')
+                opciones_pdf = [
+                    f"{row['id']} | Orden: {row['nro_orden']} - Cliente: {row['empresa_entrega']} ({row['equipo']})"
+                    for _, row in datos_db.iterrows()
+                ]
+                seleccion_pdf = st.selectbox("Seleccione la orden para confeccionar el PDF:", opciones_pdf)
+                id_pdf = int(seleccion_pdf.split(" | ")[0])
+                fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
+                
+                st.write("---")
+                st.markdown("#### Configuración Financiera del Presupuesto")
+                with st.form("formulario_pdf"):
+                    col_costos = st.columns(2)
+                    with col_costos[0]:
+                        mano_obra = st.number_input("Costo de Mano de Obra (USD)", min_value=0.0, value=50.0, step=5.0)
+                    with col_costos[1]:
+                        repuestos = st.number_input("Costo de Repuestos (USD)", min_value=0.0, value=0.0, step=5.0)
+                    
+                    validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
+                    detalles_factura = st.text_area("Detalle de Trabajos y Repuestos:")
+                    hacer_pdf = st.form_submit_button("Procesar y Preparar Documento PDF")
+                
+                if hacer_pdf:
+                    if detalles_factura:
+                        pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
+                        st.success("El documento PDF ha sido estructurado con éxito.")
+                        st.download_button(
+                            label="Descargar Documento Oficial en PDF",
+                            data=pdf_bloque_bytes,
+                            file_name=f"Presupuesto_Elinplast_Orden_{fila_seleccionada['nro_orden']}.pdf",
+                            mime="application/pdf"
+                        )
+                    else:
+                        st.warning("Describa los trabajos o repuestos para armar el presupuesto.")
+            else:
+                st.info("No hay registros disponibles para facturar.")
 
-    # --- PESTAÑA 5: HISTORIAL ---
-    with pestaña_historial:
-        st.subheader("Registros Almacenados")
-        st.dataframe(obtener_datos(), use_container_width=True)
+    # 5. HISTORIAL CORPORATIVO
+    elif menu_seleccionado == "Historial Corporativo":
+        st.subheader("Registros Almacenados en la Base de Datos")
+        datos = obtener_datos()
+        if not datos.empty:
+            datos.columns = [
+                "ID Sistema", "Prioridad Visual", "Nro Orden Empresa", "Fecha Entrada", "Cliente", "Recibido Por", 
+                "Equipo Electrónico", "Modelo", "Nro Serial", "Estado Actual",
+                "Técnico Asignado", "Fecha Salida", "Observaciones de Reparación"
+            ]
+            
+            # Buscador más ancho y limpio
+            busqueda = st.text_input("Filtro dinámico: Buscar por Nro de Orden, Equipo, Serial o Cliente", "")
+            if busqueda:
+                datos_busqueda = datos.fillna('')
+                datos_filtrados = datos[
+                    datos_busqueda["Nro Orden Empresa"].astype(str).str.contains(busqueda, case=False, na=False) |
+                    datos_busqueda["Equipo Electrónico"].str.contains(busqueda, case=False, na=False) |
+                    datos_busqueda["Nro Serial"].str.contains(busqueda, case=False, na=False) |
+                    datos_busqueda["Cliente"].str.contains(busqueda, case=False, na=False)
+                ]
+            else:
+                datos_filtrados = datos
 
-# --- NÚCLEO ---
+            # La tabla ahora aprovechará el máximo espacio de la pantalla
+            st.dataframe(datos_filtrados, use_container_width=True, height=400)
+            st.write("")
+            
+            csv_data = datos_filtrados.to_csv(index=False, sep=';').encode('utf-8-sig')
+            st.download_button(
+                label="Descargar Tabla Actual a Excel (.csv)",
+                data=csv_data,
+                file_name=f"reporte_elinplast_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+            
+            if rol_actual == "super":
+                st.write("---")
+                with st.expander("Zona de Corrección Administrativa"):
+                    st.warning("Atención: La eliminación de registros es permanente e irreversible.")
+                    datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
+                    opciones_eliminar = [
+                        f"ID: {row['ID Sistema']} | Orden: {row['Nro Orden Empresa']} | {row['Equipo Electrónico']}"
+                        for _, row in datos_filtrados.iterrows()
+                    ]
+                    seleccion_eliminar = st.selectbox("Seleccione el registro exacto que desea remover:", opciones_eliminar)
+                    if seleccion_eliminar:
+                        id_a_eliminar = int(seleccion_eliminar.split(" | ")[0].replace("ID: ", ""))
+                        confirmar_borrado = st.button("Eliminar Registro Permanentemente")
+                        if confirmar_borrado:
+                            eliminar_orden(id_a_eliminar)
+                            st.success(f"El registro con ID {id_a_eliminar} ha sido removido.")
+                            st.rerun()
+        else:
+            st.info("No se han encontrado registros en la base de datos local.")
+
+# --- NÚCLEO DEL PROGRAMA ---
 def main():
-    st.set_page_config(page_title="Elinplast - Control", layout="centered")
-    archivos = os.listdir(".")
-    logo = next((f for f in archivos if f.lower().startswith("logo_elinplast")), None)
+    # El atributo layout="wide" hace que la aplicación ocupe toda la pantalla
+    st.set_page_config(page_title="Elinplast - Control de Órdenes", layout="wide")
+
+    st.markdown("""
+        <style>
+        .main { background-color: #f8f9fa; }
+        h1 { color: #0b2545; text-align: center; font-family: 'Segoe UI', sans-serif; }
+        .stButton>button { background-color: #134074; color: white; border-radius: 5px; width: 100%; font-weight: bold; }
+        .stButton>button:hover { background-color: #8da9c4; color: #0b2545; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    archivos_locales = os.listdir(".")
+    logo_detectado = None
+    for archivo in archivos_locales:
+        if archivo.lower().startswith("logo_elinplast"):
+            logo_detectado = archivo
+            break
 
     if 'autenticado' not in st.session_state:
         st.session_state['autenticado'] = False
+        st.session_state['usuario_activo'] = ""
 
     if not st.session_state['autenticado']:
-        mostrar_pantalla_login(logo)
+        mostrar_pantalla_login(logo_detectado)
     else:
-        mostrar_aplicacion_principal(logo)
+        mostrar_aplicacion_principal(logo_detectado)
 
 if __name__ == "__main__":
     main()
