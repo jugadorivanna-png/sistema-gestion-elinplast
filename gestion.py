@@ -11,7 +11,7 @@ try:
 except ImportError:
     PDF_DISPONIBLE = False
 
-# --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES (ACTUALIZADA) ---
+# --- CREDENCIALES DE ACCESO Y MATRIZ DE ROLES ---
 USUARIOS_PERMITIDOS = {
     "ElinplastRD": {"clave": "elinplast001", "rol": "super"},
     "JOR": {"clave": "jor123", "rol": "restringido"},
@@ -44,29 +44,33 @@ def crear_db():
     except sqlite3.OperationalError: pass
     try: c.execute("ALTER TABLE ordenes ADD COLUMN nro_orden TEXT")
     except sqlite3.OperationalError: pass
+    
+    # NUEVA COLUMNA PARA PRIORIDAD
+    try: c.execute("ALTER TABLE ordenes ADD COLUMN prioridad TEXT")
+    except sqlite3.OperationalError: pass
+    
     conn.commit()
     conn.close()
 
-def guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado):
+def guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado, prioridad):
     conn = sqlite3.connect('gestion_pasantias.db')
     c = conn.cursor()
     fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute('''
-        INSERT INTO ordenes (fecha, nro_orden, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '')
-    ''', (fecha_actual, nro_orden, empresa, recibe, equipo, modelo, serial, estado))
+        INSERT INTO ordenes (fecha, nro_orden, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones, prioridad)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?)
+    ''', (fecha_actual, nro_orden, empresa, recibe, equipo, modelo, serial, estado, prioridad))
     conn.commit()
     conn.close()
 
-# NUEVA FUNCIÓN: Asignar un técnico específico a una orden
-def asignar_tecnico(id_orden, tecnico):
+def asignar_tecnico_y_prioridad(id_orden, tecnico, prioridad):
     conn = sqlite3.connect('gestion_pasantias.db')
     c = conn.cursor()
     c.execute('''
         UPDATE ordenes 
-        SET tecnico = ?
+        SET tecnico = ?, prioridad = ?
         WHERE id = ?
-    ''', (tecnico, id_orden))
+    ''', (tecnico, prioridad, id_orden))
     conn.commit()
     conn.close()
 
@@ -91,11 +95,16 @@ def eliminar_orden(id_orden):
 def obtener_datos():
     conn = sqlite3.connect('gestion_pasantias.db')
     df = pd.read_sql_query('''
-        SELECT id, nro_orden, fecha, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones 
+        SELECT id, prioridad, nro_orden, fecha, empresa_entrega, persona_recibe, equipo, modelo, serial, estado, tecnico, fecha_salida, observaciones 
         FROM ordenes 
         ORDER BY id DESC
     ''', conn)
     conn.close()
+    
+    # Rellenamos los vacíos antiguos para que no den error
+    if 'prioridad' in df.columns:
+        df['prioridad'] = df['prioridad'].fillna('🟢 Estándar')
+    
     return df
 
 # --- MOTOR DE GENERACIÓN DE PDF ---
@@ -223,7 +232,7 @@ def mostrar_aplicacion_principal(logo_detectado):
         st.markdown("### 🟢 Panel Administrativo")
         st.info(f"Usuario activo: **{usuario_actual}**\n\nNivel de Acceso: **{rol_actual.upper()}**")
         st.write("---")
-        if st.button("Cerrar Sesión"):
+        if st.button("🚪 Cerrar Sesión"):
             st.session_state['autenticado'] = False
             st.session_state['usuario_activo'] = ""
             st.rerun()
@@ -234,23 +243,24 @@ def mostrar_aplicacion_principal(logo_detectado):
         with col_logo:
             st.image(logo_detectado, use_container_width=True)
     else:
-        st.title(" ELINPLAST AUTOMATISMOS, C.A.")
+        st.title("🏭 ELINPLAST AUTOMATISMOS, C.A.")
     
     st.markdown("<h1>SISTEMA DE GESTIÓN DE SERVICIOS</h1>", unsafe_allow_html=True)
     st.write("---")
 
     # --- ENRUTAMIENTO DINÁMICO DE PESTAÑAS SEGÚN EL ROL ---
-    # Al rol "super" le agregamos la pestaña de asignación
     if rol_actual == "super":
-        pestaña_registro, pestaña_asignacion, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
+        pestaña_dashboard, pestaña_registro, pestaña_asignacion, pestaña_salida, pestaña_documentos, pestaña_historial = st.tabs([
+            "🏠 Panel de Control",
             "📝 Registrar Entrada", 
-            "🧑‍🔧 Asignar Técnico",
+            "🧑‍🔧 Asignar y Priorizar",
             "📤 Registrar Salida", 
             "🧾 Generar Presupuesto", 
             "📊 Historial Corporativo"
         ])
     else:
-        pestaña_salida, pestaña_historial = st.tabs([
+        pestaña_dashboard, pestaña_salida, pestaña_historial = st.tabs([
+            "🏠 Panel de Control",
             "📤 Registrar Salida", 
             "📊 Historial Corporativo"
         ])
@@ -258,10 +268,50 @@ def mostrar_aplicacion_principal(logo_detectado):
         pestaña_asignacion = None
         pestaña_documentos = None
 
+    # --- PESTAÑA 0: DASHBOARD / PANEL DE CONTROL (ACCESO GLOBAL) ---
+    with pestaña_dashboard:
+        st.subheader("📊 Indicadores Diarios de Taller")
+        datos_dash = obtener_datos()
+        
+        # Cálculos automáticos para las estadísticas
+        total_ordenes = len(datos_dash)
+        en_espera = len(datos_dash[datos_dash['estado'] == 'En Espera de Repuestos'])
+        llegadas_activas = len(datos_dash[datos_dash['fecha_salida'] == ''])
+        salidas_listas = len(datos_dash[datos_dash['fecha_salida'] != ''])
+        
+        # Tarjetas de métricas (Estilo Dashboard corporativo)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📌 Órdenes Totales", total_ordenes)
+        col2.metric("⚙️ Espera Repuestos", en_espera)
+        col3.metric("📥 Equipos en Taller", llegadas_activas)
+        col4.metric("📤 Entregados (Salida)", salidas_listas)
+        
+        st.write("---")
+        st.markdown("### 🚦 Leyenda de Prioridades (Semáforo de Alertas)")
+        
+        # Bloque visual de leyenda usando columnas para que se vea ordenado
+        ley1, ley2, ley3, ley4 = st.columns(4)
+        with ley1: st.info("🔴 **Emergencia:** Máxima prioridad, equipo crítico detenido.")
+        with ley2: st.warning("🟠 **Garantía:** Retrabajo o equipo de regreso por falla.")
+        with ley3: st.success("🟡 **Solo Revisión:** Diagnóstico sin urgencia de reparación.")
+        with ley4: st.error("🟢 **Estándar:** Flujo normal de trabajo en taller.") # error() da fondo rojo claro, info da azul, etc. Modificamos colores con Markdown:
+
+        st.markdown("""
+        <div style="display: flex; justify-content: space-between; background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #ddd;">
+            <div><span style="font-size: 18px;">🔴</span> <b>Emergencia</b> <br><small>Máxima prioridad, máquina detenida</small></div>
+            <div><span style="font-size: 18px;">🟠</span> <b>Garantía</b> <br><small>Retrabajo o regreso por falla</small></div>
+            <div><span style="font-size: 18px;">🟡</span> <b>Solo Revisión</b> <br><small>Evaluación y presupuesto</small></div>
+            <div><span style="font-size: 18px;">🟢</span> <b>Estándar</b> <br><small>Flujo normal de taller</small></div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.write("")
+        st.write("Visualice el color asignado a cada orden en la pestaña **Historial Corporativo**.")
+
+
     # --- PESTAÑA 1: FORMULARIO DE ENTRADA (SOLO SUPERUSUARIO) ---
     if pestaña_registro:
         with pestaña_registro:
-            st.subheader(" Recolección de Datos de Entrada")
+            st.subheader("📥 Recolección de Datos de Entrada")
             with st.form("formulario_entrada"):
                 nro_orden = st.text_input("🔢 Número de Orden", placeholder="Ej: OPT-045-2026")
                 st.write("---")
@@ -272,56 +322,76 @@ def mostrar_aplicacion_principal(logo_detectado):
                 with col2:
                     equipo = st.text_input("Equipo", placeholder="Ej: VFD Yaskawa, PLC, Motor")
                     modelo = st.text_input("Modelo", placeholder="Código de modelo")
-                serial = st.text_input("Número de Serial / Serie")
-                estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
+                
+                # Selector de Semáforo de Prioridades
+                prioridad = st.selectbox("🚦 Asignar Prioridad (Alerta)", [
+                    "🟢 Estándar", 
+                    "🔴 Emergencia", 
+                    "🟠 Garantía", 
+                    "🟡 Solo revisión y diagnóstico"
+                ])
+                
+                col_fin1, col_fin2 = st.columns(2)
+                with col_fin1:
+                    serial = st.text_input("Número de Serial / Serie")
+                with col_fin2:
+                    estado = st.selectbox("Estado inicial del equipo", ["Recibido (Por evaluar)", "En Revisión", "En Espera de Repuestos"])
+                
                 enviar = st.form_submit_button("💾 Guardar y Procesar Entrada")
 
             if enviar:
                 if nro_orden and empresa and recibe and equipo and serial:
-                    guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado)
+                    guardar_datos(nro_orden, empresa, recibe, equipo, modelo, serial, estado, prioridad)
                     st.success(f"✅ Entrada registrada bajo la Orden Nro: '{nro_orden}' con éxito.")
                     st.rerun()
                 else:
                     st.warning("⚠️ Campos obligatorios faltantes.")
 
-    # --- NUEVA PESTAÑA 2: ASIGNAR TÉCNICO (SOLO SUPERUSUARIO) ---
+    # --- PESTAÑA 2: ASIGNAR TÉCNICO Y PRIORIDAD (SOLO SUPERUSUARIO) ---
     if pestaña_asignacion:
         with pestaña_asignacion:
-            st.subheader("🧑‍🔧 Asignación de Equipos a Técnicos")
-            st.write("Seleccione una orden del sistema para designar al técnico encargado de su revisión o reparación.")
+            st.subheader("🧑‍🔧 Asignación de Equipos y Ajuste de Prioridad")
+            st.write("Seleccione una orden del sistema para designar al técnico encargado o modificar su nivel de urgencia.")
             
             datos_asignacion = obtener_datos()
             if not datos_asignacion.empty:
                 datos_asignacion['nro_orden'] = datos_asignacion['nro_orden'].fillna('S/N')
                 
-                # Lista desplegable que muestra el estado actual de asignación
                 opciones_asig = [
-                    f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} (Resp: {row['tecnico'] if row['tecnico'] else 'Sin asignar'})"
+                    f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} | Actual: {row['tecnico'] if row['tecnico'] else 'Sin asignar'} ({row['prioridad']})"
                     for _, row in datos_asignacion.iterrows()
                 ]
                 
-                seleccion_asig = st.selectbox("Seleccione la orden a asignar:", opciones_asig)
+                seleccion_asig = st.selectbox("Seleccione la orden a gestionar:", opciones_asig)
                 id_asig = int(seleccion_asig.split(" | ")[0].replace("ID: ", ""))
                 
                 with st.form("formulario_asignacion"):
-                    nuevo_tecnico = st.selectbox("Asignar al Técnico:", ["JOR", "JR", "FR", "AA"])
-                    btn_asignar = st.form_submit_button("✅ Confirmar Asignación")
+                    col_as1, col_as2 = st.columns(2)
+                    with col_as1:
+                        nuevo_tecnico = st.selectbox("Asignar al Técnico:", ["JOR", "JR", "FR", "AA"])
+                    with col_as2:
+                        nueva_prioridad = st.selectbox("Cambiar Prioridad a:", [
+                            "🟢 Estándar", 
+                            "🔴 Emergencia", 
+                            "🟠 Garantía", 
+                            "🟡 Solo revisión y diagnóstico"
+                        ])
+                        
+                    btn_asignar = st.form_submit_button("✅ Guardar Cambios en la Orden")
                     
                     if btn_asignar:
-                        asignar_tecnico(id_asig, nuevo_tecnico)
-                        st.success(f"✅ La orden ha sido asignada exitosamente al técnico {nuevo_tecnico}.")
+                        asignar_tecnico_y_prioridad(id_asig, nuevo_tecnico, nueva_prioridad)
+                        st.success(f"✅ La orden fue actualizada. Técnico: {nuevo_tecnico} | Alerta: {nueva_prioridad}")
                         st.rerun()
             else:
-                st.info("No hay registros en el sistema para asignar.")
+                st.info("No hay registros en el sistema.")
 
     # --- PESTAÑA 3: FORMULARIO DE SALIDA (ACCESO GLOBAL) ---
     with pestaña_salida:
-        st.subheader(" Cierre Técnico y Datos de Salida")
+        st.subheader("📤 Cierre Técnico y Datos de Salida")
         datos_originales = obtener_datos()
         if not datos_originales.empty:
             datos_originales['nro_orden'] = datos_originales['nro_orden'].fillna('S/N')
-            
-            # Mostramos en el menú a quién pertenece cada equipo para que el técnico sepa cuál elegir
             opciones_equipos = [
                 f"ID: {row['id']} | Orden: {row['nro_orden']} - {row['equipo']} (Resp: {row['tecnico'] if row['tecnico'] else 'Nadie'})" 
                 for _, row in datos_originales.iterrows()
@@ -330,7 +400,6 @@ def mostrar_aplicacion_principal(logo_detectado):
             id_seleccionado = int(seleccion.split(" | ")[0].replace("ID: ", ""))
             
             with st.form("formulario_salida"):
-                # El sistema autocompleta el nombre de quien inició sesión
                 tecnico = st.text_input("¿Quién trabajó / reparó el equipo?", value=usuario_actual)
                 col_fechas = st.columns(2)
                 with col_fechas[0]:
@@ -369,7 +438,7 @@ def mostrar_aplicacion_principal(logo_detectado):
                     fila_seleccionada = datos_db[datos_db['id'] == id_pdf].iloc[0]
                     
                     st.write("---")
-                    st.markdown("#### Configuración Financiera del Presupuesto")
+                    st.markdown("#### 💰 Configuración Financiera del Presupuesto")
                     with st.form("formulario_pdf"):
                         col_costos = st.columns(2)
                         with col_costos[0]:
@@ -379,12 +448,12 @@ def mostrar_aplicacion_principal(logo_detectado):
                         
                         validez = st.text_input("Validez del Presupuesto", value="5 días hábiles a partir de la fecha")
                         detalles_factura = st.text_area("Detalle de Trabajos y Repuestos:")
-                        hacer_pdf = st.form_submit_button(" Procesar y Preparar Documento PDF")
+                        hacer_pdf = st.form_submit_button("⚙️ Procesar y Preparar Documento PDF")
                     
                     if hacer_pdf:
                         if detalles_factura:
                             pdf_bloque_bytes = fabricar_pdf_cotizacion(fila_seleccionada, mano_obra, repuestos, detalles_factura, validez)
-                            st.success(" ¡El documento PDF ha sido estructurado con éxito!")
+                            st.success("🎉 ¡El documento PDF ha sido estructurado con éxito!")
                             st.download_button(
                                 label="📥 Descargar Documento Oficial en PDF",
                                 data=pdf_bloque_bytes,
@@ -401,8 +470,9 @@ def mostrar_aplicacion_principal(logo_detectado):
         st.subheader("📋 Registros Almacenados en la Base de Datos")
         datos = obtener_datos()
         if not datos.empty:
+            # Reorganizamos las columnas para mostrar la Prioridad de primero después del ID
             datos.columns = [
-                "ID Sistema", "Nro Orden Empresa", "Fecha Entrada", "Empresa Emisora", "Recibido Por", 
+                "ID Sistema", "Prioridad Visual", "Nro Orden Empresa", "Fecha Entrada", "Empresa Emisora", "Recibido Por", 
                 "Equipo Electrónico", "Modelo", "Nro Serial", "Estado Actual",
                 "Técnico Asignado", "Fecha Salida", "Observaciones de Reparación"
             ]
@@ -429,28 +499,30 @@ def mostrar_aplicacion_principal(logo_detectado):
                 mime="text/csv"
             )
             
-            st.write("---")
-            with st.expander("🗑️ Zona de Corrección Administrativa"):
-                st.warning("⚠️ Atención: La eliminación de registros es permanente e irreversible.")
-                datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
-                opciones_eliminar = [
-                    f"ID: {row['ID Sistema']} | Orden: {row['Nro Orden Empresa']} | {row['Equipo Electrónico']}"
-                    for _, row in datos_filtrados.iterrows()
-                ]
-                seleccion_eliminar = st.selectbox("Seleccione el registro exacto que desea remover:", opciones_eliminar)
-                if seleccion_eliminar:
-                    id_a_eliminar = int(seleccion_eliminar.split(" | ")[0].replace("ID: ", ""))
-                    confirmar_borrado = st.button("🚨 Eliminar Registro Permanentemente")
-                    if confirmar_borrado:
-                        eliminar_orden(id_a_eliminar)
-                        st.success(f"💥 El registro con ID {id_a_eliminar} ha sido removido.")
-                        st.rerun()
+            # --- ZONA DE CORRECCIÓN (SOLO SUPERUSUARIO) ---
+            if rol_actual == "super":
+                st.write("---")
+                with st.expander("🗑️ Zona de Corrección Administrativa"):
+                    st.warning("⚠️ Atención: La eliminación de registros es permanente e irreversible.")
+                    datos_filtrados['Nro Orden Empresa'] = datos_filtrados['Nro Orden Empresa'].fillna('S/N')
+                    opciones_eliminar = [
+                        f"ID: {row['ID Sistema']} | Orden: {row['Nro Orden Empresa']} | {row['Equipo Electrónico']}"
+                        for _, row in datos_filtrados.iterrows()
+                    ]
+                    seleccion_eliminar = st.selectbox("Seleccione el registro exacto que desea remover:", opciones_eliminar)
+                    if seleccion_eliminar:
+                        id_a_eliminar = int(seleccion_eliminar.split(" | ")[0].replace("ID: ", ""))
+                        confirmar_borrado = st.button("🚨 Eliminar Registro Permanentemente")
+                        if confirmar_borrado:
+                            eliminar_orden(id_a_eliminar)
+                            st.success(f"💥 El registro con ID {id_a_eliminar} ha sido removido.")
+                            st.rerun()
         else:
             st.info("No se han encontrado registros en la base de datos local.")
 
 # --- NÚCLEO DEL PROGRAMA ---
 def main():
-    st.set_page_config(page_title="Elinplast - Control de Órdenes", layout="centered")
+    st.set_page_config(page_title="Elinplast - Control de Órdenes", layout="centered", page_icon="⚙️")
 
     st.markdown("""
         <style>
