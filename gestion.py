@@ -117,9 +117,14 @@ def disparar_alerta_api(nro_orden, equipo, tecnico):
     mensaje_formateado = f"ALERTA DE TALLER: EQUIPO REPARADO\n\nEl sistema de Elinplast Automatismos detectó una actualización:\n\nOrden Nro: {nro_orden}\nEquipo: {equipo}\nTécnico: {tecnico}\n\nEl equipo está listo para facturación y entrega."
     
     try:
-        requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado, 'parse_mode': 'Markdown'})
-    except:
-        pass 
+        # Quitamos el parse_mode que causa conflictos y agregamos diagnóstico
+        response = requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado})
+        
+        if response.status_code != 200:
+            st.error(f"Error de Telegram (Código {response.status_code}): {response.text}")
+            
+    except Exception as e:
+        st.error(f"Error de conexión con la API: {e}")
 
 # --- MOTOR DE GENERACIÓN DE PDF ---
 def fabricar_pdf_cotizacion(datos_orden, mano_obra, repuestos, detalles_factura, validez):
