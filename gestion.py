@@ -106,9 +106,12 @@ def obtener_datos():
     return df
 
 # --- API DE NOTIFICACIONES (TELEGRAM) ---
-def disparar_alerta_api(nro_orden, equipo, tecnico):
+def disparar_alerta_api(nro_orden, equipo, tecnico, obs):
     TOKEN_BOT = "8977110110:AAEyRn6N_G63isqG9gOhdjnzLp0bPKphoQM" 
     CHAT_ID_ADMIN = "549012168"
+    msg = f"ACTUALIZACIÓN DE TALLER\n\nOrden: {nro}\nEquipo: {eq}\nTécnico: {tec}\nEstado: *{est}*\nObs: {obs}"
+    try: requests.post(f"https://api.telegram.org/bot{TOKEN}/sendMessage", data={'chat_id': CHAT, 'text': msg, 'parse_mode': 'Markdown'})
+    except: pass
     
     if not TOKEN_BOT or not CHAT_ID_ADMIN:
         return 
