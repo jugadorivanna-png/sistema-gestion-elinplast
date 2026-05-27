@@ -106,24 +106,20 @@ def obtener_datos():
     return df
 
 # --- API DE NOTIFICACIONES (TELEGRAM) ---
-def disparar_alerta_api(nro_orden, equipo, tecnico, obs):
+def disparar_alerta_api(nro_orden, equipo, tecnico, estado, obs):
     TOKEN_BOT = "8977110110:AAEyRn6N_G63isqG9gOhdjnzLp0bPKphoQM" 
     CHAT_ID_ADMIN = "549012168"
-    
     
     if not TOKEN_BOT or not CHAT_ID_ADMIN:
         return 
         
     url = f"https://api.telegram.org/bot{TOKEN_BOT}/sendMessage"
-    mensaje_formateado = f"ALERTA DE TALLER: EQUIPO REPARADO\n\nEl sistema de Elinplast Automatismos detectó una actualización:\n\nOrden Nro: {nro_orden}\nEquipo: {equipo}\nTécnico: {tecnico}\n\nEl equipo está listo para facturación y entrega."
+    mensaje_formateado = f"ACTUALIZACIÓN DE TALLER\n\nOrden: {nro_orden}\nEquipo: {equipo}\nTécnico: {tecnico}\nEstado: *{estado}*\nObs: {obs}"
     
     try:
-        # Quitamos el parse_mode que causa conflictos y agregamos diagnóstico
-        response = requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado})
-        
+        response = requests.post(url, data={'chat_id': CHAT_ID_ADMIN, 'text': mensaje_formateado, 'parse_mode': 'Markdown'})
         if response.status_code != 200:
-            st.error(f"Error de Telegram (Código {response.status_code}): {response.text}")
-            
+            st.error(f"Error de Telegram: {response.text}")
     except Exception as e:
         st.error(f"Error de conexión con la API: {e}")
 
@@ -243,6 +239,23 @@ def mostrar_aplicacion_principal(logo_detectado):
     usuario_actual = st.session_state.get('usuario_activo', 'Desconocido')
     rol_actual = USUARIOS_PERMITIDOS.get(usuario_actual, {}).get('rol', 'restringido')
 
+    # --- LÓGICA DE NOTIFICACIONES INTERNAS ---
+    datos_notif = obtener_datos()
+    alertas = []
+    
+    if not datos_notif.empty:
+        datos_notif['nro_orden'] = datos_notif['nro_orden'].fillna('S/N')
+        if rol_actual == "super":
+            # Alerta para el admin: Equipos Reparados listos para entregar
+            equipos_reparados = datos_notif[(datos_notif['estado'] == 'Reparado') & (datos_notif['fecha_salida'] == '')]
+            for _, fila in equipos_reparados.iterrows():
+                alertas.append(f"✅ La Orden <b>{fila['nro_orden']}</b> ({fila['equipo']}) está lista.")
+        else:
+            # Alerta para técnicos: Equipos Asignados pendientes
+            equipos_asignados = datos_notif[(datos_notif['tecnico'] == usuario_actual) & (datos_notif['fecha_salida'] == '') & (datos_notif['estado'] != 'Reparado')]
+            for _, fila in equipos_asignados.iterrows():
+                alertas.append(f"🔧 Tienes asignada la Orden <b>{fila['nro_orden']}</b> ({fila['equipo']}).")
+
     # --- MENÚ DE NAVEGACIÓN LATERAL ---
     with st.sidebar:
         if logo_detectado:
@@ -250,6 +263,16 @@ def mostrar_aplicacion_principal(logo_detectado):
             
         st.markdown("### Panel Administrativo")
         st.info(f"Usuario activo: **{usuario_actual}**\n\nAcceso: **{rol_actual.upper()}**")
+        
+        # --- GLOBO DE NOTIFICACIONES ---
+        if len(alertas) > 0:
+            with st.expander(f"🔔 Notificaciones ({len(alertas)})"):
+                for alerta in alertas:
+                    st.markdown(f"<small>{alerta}</small>", unsafe_allow_html=True)
+                    st.write("---")
+        else:
+            st.markdown("🔕 *Sin notificaciones nuevas*")
+            
         st.write("---")
         
         st.markdown("#### Menú de Navegación")
@@ -406,18 +429,13 @@ def mostrar_aplicacion_principal(logo_detectado):
             if enviar_salida:
                 if tecnico and observaciones:
                     actualizar_salida(id_seleccionado, tecnico, str(fecha_salida), observaciones, nuevo_estado)
-                    
-                    if nuevo_estado == "Reparado":
-                        info_equipo = datos_originales[datos_originales['id'] == id_seleccionado].iloc[0]
-                        disparar_alerta_api(info_equipo['nro_orden'], info_equipo['equipo'], tecnico)
-                        st.success("Cierre almacenado y notificación enviada a Administración.")
-                    else:
-                        st.success("Cierre de orden almacenado correctamente.")
+                
+                    info_equipo = datos_originales[datos_originales['id'] == id_seleccionado].iloc[0]
+                    disparar_alerta_api(info_equipo['nro_orden'], info_equipo['equipo'], tecnico, nuevo_estado, observaciones)
+                    st.success("Cierre de orden almacenado y notificación enviada exitosamente.")
+                    st.rerun()
                 else:
                     st.warning("Por favor, rellene los campos obligatorios.")
-        else:
-            st.info("No hay equipos en la base de datos para registrar una salida.")
-
     # 4. GENERAR PRESUPUESTO
     elif menu_seleccionado == "Generar Presupuesto":
         st.subheader("Facturación Estructurada y Notas de Presupuesto")
